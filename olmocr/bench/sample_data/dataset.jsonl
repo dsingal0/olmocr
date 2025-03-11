@@ -68,7 +68,10 @@
 {"pdf": "mathfuncs_colswitch.pdf", "page": 1, "id": "mathfuncscol_01", "type": "order", "before": "Pythagorean Theorem", "after": "The Fundamental Theorem of Calculus"}
 {"pdf": "mathfuncs_colswitch.pdf", "page": 1, "id": "mathfuncscol_02", "type": "order", "before": "The Fundamental Theorem of Calculus", "after": "Maxwell's Equations"}
 
-{"pdf": "math_2503_04086.pdf", "page": 1, "id": "math_2503_04086_00", "type": "math", "math": "\\lambda_{g}=\\sum_{s \\in S} \\zeta_{n}^{\\psi(g s)}=\\sum_{i=1}^{k}\\left[\\sum_{s, R s=\\mathcal{I}_{i}} \\zeta_{n}^{\\varphi(g s)}\\right]"}
+
+{"pdf": "math_2503_04086.pdf", "page": 1, "id": "math_2503_04086_00", "type": "math", "math": "\\lambda_{g}=\\sum_{s \\in S} \\zeta_{n}^{\\psi(g s)}=\\sum_{i=1}^{k}\\left[\\sum_{s, R s=\\mathcal{I}_{i}} \\zeta_{n}^{\\psi(g s)}\\right]"}
 {"pdf": "math_2503_04086.pdf", "page": 1, "id": "math_2503_04086_01", "type": "math", "math": "\\lambda_{g}=\\lambda_{g^{\\prime}}"}
 {"pdf": "math_2503_04086.pdf", "page": 1, "id": "math_2503_04086_02", "type": "math", "math": "u \\in\\left(R / \\operatorname{Ann}_{R}\\left(x_{i}\\right)\\right)^{\\times}"}
 {"pdf": "math_2503_04086.pdf", "page": 1, "id": "math_2503_04086_03", "type": "math", "math": "\\lambda_{g}=\\sum_{i=1}^{k} c\\left(g, R / \\operatorname{Ann}_{R}\\left(x_{i}\\right)\\right)"}
+{"pdf": "math_2503_04086.pdf", "page": 1, "id": "math_2503_04086_04", "type": "present", "text": "We also thank Ján Mináč for his constant encouragement and support."}
+{"pdf": "math_2503_04086.pdf", "page": 1, "id": "math_2503_04086_04", "type": "present", "text": "Allgemeine theorie der Gaußschen Summen in endlichen kommutativen Ringe"}

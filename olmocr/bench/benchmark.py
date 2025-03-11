@@ -17,6 +17,7 @@ import argparse
 import glob
 import os
 import sys
+import re
 
 from typing import Dict, List, Tuple, Optional
 
@@ -52,10 +53,17 @@ def evaluate_candidate(
     pdf_to_md_files = {}
     for pdf_name in pdf_basenames:
         md_base = os.path.splitext(pdf_name)[0]
-        md_pattern = os.path.join(candidate_folder, f"{md_base}_*.md")
-        md_files = glob.glob(md_pattern)
+        md_regex = re.compile(rf"^{re.escape(md_base)}_\d+\.md$")
+        
+        # List all files in the candidate folder and filter using regex
+        all_files = os.listdir(candidate_folder)
+        md_files = [os.path.join(candidate_folder, f) for f in all_files if md_regex.match(f)]
+        
         if not md_files and not force:
-            candidate_errors.append(f"Candidate '{candidate_name}' is missing MD repeats for {pdf_name} (expected files matching {md_base}_*.md).")
+            candidate_errors.append(
+                f"Candidate '{candidate_name}' is missing MD repeats for {pdf_name} "
+                f"(expected files matching {md_base}_*.md)."
+            )
         else:
             pdf_to_md_files[pdf_name] = md_files
 
@@ -152,9 +160,6 @@ def main():
     n_bootstrap = args.bootstrap_samples
     ci_level = args.confidence_level
     pdf_folder = os.path.join(input_folder, "pdfs")
-
-    # Clear equation cache directory
-    clear_cache_dir()
 
     # Check that the pdfs folder exists
     if not os.path.exists(pdf_folder):

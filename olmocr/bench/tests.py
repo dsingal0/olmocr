@@ -34,6 +34,25 @@ class ValidationError(Exception):
     pass
 
 
+def normalize_text(md_content: str) -> str:
+    # Normalize whitespace in the md_content
+    md_content = re.sub(r'\s+', " ", md_content)
+
+    # Dictionary of characters to replace: keys are fancy characters, values are ASCII equivalents
+    replacements = {
+        "‘": "'", "’": "'", "‚": "'",
+        "“": "\"", "”": "\"", "„": "\"",
+        "＿": "_",
+        "–": "-", "—": "-", "‑": "-", "‒": "-"
+    }
+
+     # Apply all replacements from the dictionary
+    for fancy_char, ascii_char in replacements.items():
+        md_content = md_content.replace(fancy_char, ascii_char)
+
+    return md_content
+
+
 @dataclass(kw_only=True)
 class BasePDFTest:
     """
@@ -100,7 +119,7 @@ class TextPresenceTest(BasePDFTest):
         reference_query = self.text
 
         # Normalize whitespace in the md_content
-        md_content = re.sub(r'\s+', " ", md_content)
+        md_content = normalize_text(md_content)
 
         # Threshold for fuzzy matching derived from max_diffs
         threshold = 1.0 - (self.max_diffs / (len(reference_query) if len(reference_query) > 0 else 1))
@@ -143,6 +162,8 @@ class TextOrderTest(BasePDFTest):
             raise ValidationError("After field cannot be empty")
 
     def run(self, md_content: str) -> Tuple[bool, str]:
+        md_content = normalize_text(md_content)
+
         before_matches = find_near_matches(self.before, md_content, max_l_dist=self.max_diffs)
         after_matches = find_near_matches(self.after, md_content, max_l_dist=self.max_diffs)
 
