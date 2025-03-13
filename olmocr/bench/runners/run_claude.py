@@ -27,6 +27,9 @@ def run_claude(pdf_path: str, page_num: int = 1, model: str = "claude-3-7-sonnet
         str: The OCR result in markdown format.
     """
 
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise SystemExit("You must specify an ANTHROPIC_API_KEY")
+
     image_base64 = render_pdf_to_base64png(pdf_path, page_num=page_num, target_longest_image_dim=2048)
     anchor_text = get_anchor_text(pdf_path, page_num, pdf_engine="pdfreport")
     client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))

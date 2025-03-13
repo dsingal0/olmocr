@@ -107,6 +107,7 @@ class TextPresenceTest(BasePDFTest):
     """
 
     text: str
+    case_sensitive: bool=True
 
     def __post_init__(self):
         super().__post_init__()
@@ -120,6 +121,10 @@ class TextPresenceTest(BasePDFTest):
 
         # Normalize whitespace in the md_content
         md_content = normalize_text(md_content)
+
+        if not self.case_sensitive:
+            reference_query = reference_query.lower()
+            md_content = md_content.lower()
 
         # Threshold for fuzzy matching derived from max_diffs
         threshold = 1.0 - (self.max_diffs / (len(reference_query) if len(reference_query) > 0 else 1))
@@ -481,7 +486,6 @@ class BaselineTest(BasePDFTest):
 @dataclass
 class MathTest(BasePDFTest):
     math: str
-    threshold: float=0.95
 
     def __post_init__(self):
         super().__post_init__()
@@ -581,10 +585,13 @@ def load_tests(jsonl_file: str) -> List[BasePDFTest]:
                 tests.append(test)
             except json.JSONDecodeError as e:
                 print(f"Error parsing JSON on line {line_number}: {e}")
+                raise
             except (ValidationError, KeyError) as e:
                 print(f"Error on line {line_number}: {e}")
+                raise
             except Exception as e:
                 print(f"Unexpected error on line {line_number}: {e}")
+                raise
 
     return tests
 

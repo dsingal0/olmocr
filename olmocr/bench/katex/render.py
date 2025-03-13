@@ -12,6 +12,8 @@ Requirements:
 """
 
 import os
+import re
+import html
 import hashlib
 import pathlib
 import json
@@ -20,7 +22,8 @@ import shutil
 from dataclasses import dataclass
 from typing import List
 import unittest
-import xml.etree.ElementTree as ET
+import html.entities
+from lxml import etree
 
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
 
@@ -125,7 +128,7 @@ def render_equation(
         page = browser.new_page(viewport={"width": 800, "height": 400})
         
         # Basic HTML structure
-        html = f"""
+        page_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -150,7 +153,7 @@ def render_equation(
         </body>
         </html>
         """
-        page.set_content(html)
+        page.set_content(page_html)
         page.add_style_tag(path=katex_css_path)
         page.add_script_tag(path=katex_js_path)
         page.wait_for_load_state("networkidle")
@@ -285,30 +288,27 @@ def compare_rendered_equations(reference: RenderedEquation, hypothesis: Rendered
     for the hypothesis neighbor – otherwise, the candidate must have the same text as the hypothesis neighbor.
     The algorithm uses backtracking to explore all possible assignments.
     """
-    import xml.etree.ElementTree as ET
-    import re
-
-    def strip_namespaces(elem: ET.Element) -> ET.Element:
-        for sub in elem.iter():
-            if '}' in sub.tag:
-                sub.tag = sub.tag.split('}', 1)[1]
-        return elem
+    from bs4 import BeautifulSoup
 
     def extract_inner(mathml: str) -> str:
         try:
-            root = ET.fromstring(mathml)
-            root = strip_namespaces(root)
-            semantics = root.find('semantics')
-            if semantics is not None:
-                inner_parts = []
-                for child in semantics:
-                    if child.tag != 'annotation':
-                        inner_parts.append(ET.tostring(child, encoding='unicode'))
+            # Use the "xml" parser so that BeautifulSoup parses MathML correctly,
+            # handling HTML entities along the way.
+            soup = BeautifulSoup(mathml, "xml")
+            semantics = soup.find("semantics")
+            if semantics:
+                # Concatenate the string representation of all children except <annotation>
+                inner_parts = [
+                    str(child)
+                    for child in semantics.contents
+                    if getattr(child, "name", None) != "annotation"
+                ]
                 return ''.join(inner_parts)
             else:
-                return ET.tostring(root, encoding='unicode')
+                return str(soup)
         except Exception as e:
-            print("Error parsing MathML:", e)
+            print("Error parsing MathML with BeautifulSoup:", e)
+            print(mathml)
             return mathml
 
     def normalize(s: str) -> str:

@@ -4,9 +4,10 @@ import glob
 import importlib
 import os
 from functools import partial
+from itertools import product
 
 from tqdm import tqdm
-
+from pypdf import PdfReader
 
 def parse_method_arg(method_arg):
     """
@@ -48,15 +49,15 @@ async def run_sync_in_executor(func, *args, **kwargs):
     return await loop.run_in_executor(None, partial(func, *args, **kwargs))
 
 
-async def process_pdf(pdf_path, method, kwargs, output_path, is_async):
+async def process_pdf(pdf_path, page_num, method, kwargs, output_path, is_async):
     """Process a single PDF and save the result to output_path"""
     try:
         if is_async:
             # Run async function directly
-            markdown = await method(pdf_path, page_num=1, **kwargs)
+            markdown = await method(pdf_path, page_num=page_num, **kwargs)
         else:
             # Run synchronous function in the executor
-            markdown = await run_sync_in_executor(method, pdf_path, page_num=1, **kwargs)
+            markdown = await run_sync_in_executor(method, pdf_path, page_num=page_num, **kwargs)
 
         if markdown is None:
             print(f"Warning, did not get output for {os.path.basename(output_path)}")
@@ -101,21 +102,25 @@ async def process_pdfs(config, pdf_directory, data_directory, repeats, force, ma
         task_descriptions = {}
         
         for pdf_path in all_pdfs:
+            pdf = PdfReader(pdf_path)
+            num_pages = len(pdf.pages)
+
             base_name = os.path.basename(pdf_path).replace(".pdf", "")
             
-            for i in range(1, repeats + 1):
-                output_filename = f"{base_name}_{i}.md"
-                output_path = os.path.join(candidate_output_dir, output_filename)
-                
-                if os.path.exists(output_path) and not force:
-                    print(f"Skipping {base_name}_{i} for {candidate}, file already exists")
-                    print("Rerun with --force flag to force regeneration")
-                    continue
-                
-                task = process_pdf(pdf_path, method, kwargs, output_path, is_async)
-                tasks.append(task)
-                task_descriptions[id(task)] = f"{base_name}_{i} ({candidate})"
-        
+            for repeat in range(1, repeats + 1):
+                for page_num in range(1, num_pages + 1):
+                    output_filename = f"{base_name}_pg{page_num}_repeat{repeat}.md"
+                    output_path = os.path.join(candidate_output_dir, output_filename)
+                    
+                    if os.path.exists(output_path) and not force:
+                        print(f"Skipping {base_name}_pg{page_num}_repeat{repeat} for {candidate}, file already exists")
+                        print("Rerun with --force flag to force regeneration")
+                        continue
+                    
+                    task = process_pdf(pdf_path, page_num, method, kwargs, output_path, is_async)
+                    tasks.append(task)
+                    task_descriptions[id(task)] = f"{base_name}_pg{page_num}_repeat{repeat} ({candidate})"
+            
         # Process tasks with semaphore to limit concurrency
         semaphore = asyncio.Semaphore(max_parallel or 1)  # Default to 1 if not specified
         

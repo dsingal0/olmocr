@@ -26,6 +26,10 @@ def run_chatgpt(pdf_path: str, page_num: int = 1, model: str = "gpt-4o-2024-08-0
     # Convert the first page of the PDF to a base64-encoded PNG image.
     image_base64 = render_pdf_to_base64png(pdf_path, page_num=page_num, target_longest_image_dim=2048)
     anchor_text = get_anchor_text(pdf_path, page_num, pdf_engine="pdfreport")
+
+    if not os.getenv("OPENAI_API_KEY"):
+        raise SystemExit("You must specify an OPENAI_API_KEY")
+
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     response = client.chat.completions.create(

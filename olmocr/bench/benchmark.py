@@ -4,7 +4,7 @@ This script runs olmocr bench.
 It will take as an argument a folder, and scan it for .jsonl files which contain the various rules and properties that we will check.
 It will then validate the JSON files to make sure they are all valid.
 Then, each other folder in there (besides /pdfs) represents a pipeline tool that we will evaluate.
-We will validate that each one of those contains at least one .md file (or repeated generations, e.g. _1.md, _2.md, etc.)
+We will validate that each one of those contains at least one .md file (or repeated generations, e.g. _pg{page}_repeat{repeat}.md)
 corresponding to its parse for every .pdf in the /pdfs folder.
 Then, we will read each one, and check if they pass against all the rules.
 If a rule fails on some of the repeats, a short explanation is printed.
@@ -20,6 +20,7 @@ import sys
 import re
 
 from typing import Dict, List, Tuple, Optional
+from pypdf import PdfReader
 
 from .tests import BasePDFTest, BaselineTest, load_tests
 from .katex.render import clear_cache_dir
@@ -30,7 +31,7 @@ def evaluate_candidate(
 ) -> Tuple[float, int, List[str], List[str], Dict[str, List[float]], List[float]]:
     """
     For the candidate folder (pipeline tool output), validate that it contains at least one .md file
-    (i.e. repeated generations like _1.md, _2.md, etc.) for every PDF in the pdf folder.
+    (i.e. repeated generations like _pg{page}_repeat{repeat}.md) for every PDF in the pdf folder.
     Then, run each rule against all corresponding .md files and average the results.
 
     Returns a tuple:
@@ -49,11 +50,12 @@ def evaluate_candidate(
     all_test_scores = []  # Store all individual test scores for bootstrapping
     candidate_name = os.path.basename(candidate_folder)
 
-    # Map each PDF to its corresponding MD repeats (e.g., doc1_1.md, doc1_2.md, etc.)
+    # Map each PDF to its corresponding MD repeats (e.g., doc1_pg1_repeat1.md, doc1_pg2_repeat2.md, etc.)
     pdf_to_md_files = {}
     for pdf_name in pdf_basenames:
         md_base = os.path.splitext(pdf_name)[0]
-        md_regex = re.compile(rf"^{re.escape(md_base)}_\d+\.md$")
+        # Updated regex for new format: {pdf_name}_pg<page>_repeat<repeat>.md
+        md_regex = re.compile(rf"^{re.escape(md_base)}_pg\d+_repeat\d+\.md$")
         
         # List all files in the candidate folder and filter using regex
         all_files = os.listdir(candidate_folder)
@@ -62,7 +64,7 @@ def evaluate_candidate(
         if not md_files and not force:
             candidate_errors.append(
                 f"Candidate '{candidate_name}' is missing MD repeats for {pdf_name} "
-                f"(expected files matching {md_base}_*.md)."
+                f"(expected files matching {md_base}_pg{{page}}_repeat*.md)."
             )
         else:
             pdf_to_md_files[pdf_name] = md_files
@@ -72,7 +74,7 @@ def evaluate_candidate(
 
     total_test_score = 0.0
 
-    # Evaluate each test. Each test references a PDF (e.g., "doc1.pdf") so we get all its MD repeats.
+    # Evaluate each test. Each test references a PDF (e.g., "doc1.pdf") and a specific page.
     for test in all_tests:
         test_type = test.type
         if test_type not in test_type_breakdown:
@@ -80,12 +82,19 @@ def evaluate_candidate(
         pdf_name = test.pdf
         md_base = os.path.splitext(pdf_name)[0]
         md_files = pdf_to_md_files.get(pdf_name, [])
-        if not md_files:
-            continue  # Should not occur due to earlier check.
+        # Filter MD files for the specific page corresponding to the test
+        page_md_files = [f for f in md_files if re.search(rf"_pg{test.page}_", os.path.basename(f))]
+        if not page_md_files:
+            candidate_errors.append(
+                f"Candidate '{candidate_name}' is missing MD repeats for {pdf_name} page {test.page} "
+                f"(expected files matching {md_base}_pg{test.page}_repeat*.md)."
+            )
+            continue
+
         repeat_passes = 0
         num_repeats = 0
         explanations = []
-        for md_path in md_files:
+        for md_path in page_md_files:
             num_repeats += 1
             try:
                 with open(md_path, "r", encoding="utf-8") as f:
@@ -110,8 +119,8 @@ def evaluate_candidate(
         total_test_score += test_avg
         if test_avg < 1.0:
             test_failures.append(
-                f"Test {test.id} on {md_base} average pass ratio: {test_avg:.3f} ({repeat_passes}/{num_repeats} repeats passed). "
-                f"Ex: {explanations[0] if explanations else 'No explanation'}"
+                f"Test {test.id} on {md_base} page {test.page} average pass ratio: {test_avg:.3f} "
+                f"({repeat_passes}/{num_repeats} repeats passed). Ex: {explanations[0] if explanations else 'No explanation'}"
             )
         test_type_breakdown[test_type].append(test_avg)
 
@@ -195,6 +204,15 @@ def main():
     for pdf in pdf_basenames:
         if not any(t.type == "baseline" for t in all_tests if t.pdf == pdf):
             all_tests.append(BaselineTest(id=f"{pdf}_baseline", pdf=pdf, page=1, type="baseline"))
+
+    # Make sure that each PDF and page has at least one test in it
+    for pdf in pdf_basenames:
+        pdf_doc = PdfReader(os.path.join(pdf_folder, pdf))
+        
+        for page in range(1, len(pdf_doc.pages) + 1):
+            if not any(test for test in all_tests if test.pdf == pdf and test.page == page) and not args.force:
+                print(f"No dataset entry found for pdf {pdf} page {page}")
+                sys.exit(1)
 
     # Identify candidate pipeline folders (subdirectories of input_folder excluding /pdfs)
     candidate_folders = []

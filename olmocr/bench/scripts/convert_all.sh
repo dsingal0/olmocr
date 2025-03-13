@@ -14,12 +14,14 @@ cleanup() {
     echo "[INFO] Stopping any running Python processes"
     pkill -P $$ python || true
     
-    # Stop sglang server if running
+    # Stop server if running
     if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo "[INFO] Stopping sglang server (PID: $SERVER_PID)"
+        echo "[INFO] Stopping server (PID: $SERVER_PID)"
         kill -TERM "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
     fi
+
+    pkill vllm
     
     echo "[INFO] Cleanup complete. Exiting."
     exit 1
@@ -91,17 +93,23 @@ create_conda_env() {
     fi
 }
 
-# Function to start sglang server with OpenAI API for a specific model
-# Now accepting additional arguments after the model name
-start_sglang_server() {
-    model_name=$1
-    shift  # Remove the first argument (model_name) from the argument list
+# Generic function to start a server (either vllm or sglang)
+start_server() {
+    server_type=$1
+    model_name=$2
+    shift 2  # Remove server type and model name from the argument list
     
-    echo "Starting sglang server for model: $model_name"
+    echo "Starting $server_type server for model: $model_name"
     echo "Additional arguments: $@"
     
-    # Start the server in the background with all remaining arguments and save the PID
-    python -m sglang.launch_server --port 30000 --model $model_name $@ &
+    if [ "$server_type" = "sglang" ]; then
+        python -m sglang.launch_server --port 30000 --model "$model_name" "$@" &
+    elif [ "$server_type" = "vllm" ]; then
+        vllm serve $model_name --port 30000 "$@" &
+    else
+        echo "Unsupported server type: $server_type"
+        exit 1
+    fi
     SERVER_PID=$!
     
     # Check if the server process is running
@@ -114,15 +122,11 @@ start_sglang_server() {
     echo "Waiting for server to be ready..."
     max_attempts=300
     attempt=0
-    
     while [ $attempt -lt $max_attempts ]; do
-        # Try to reach the models endpoint with an API key header
-        if curl -s "http://localhost:30000/v1/models" \
-           -o /dev/null -w "%{http_code}" | grep -q "200"; then
+        if curl -s "http://localhost:30000/v1/models" -o /dev/null -w "%{http_code}" | grep -q "200"; then
             echo "Server is ready!"
             return 0
         fi
-        
         attempt=$((attempt + 1))
         echo "Waiting for server... attempt $attempt/$max_attempts"
         sleep 2
@@ -134,9 +138,9 @@ start_sglang_server() {
     exit 1
 }
 
-# Function to stop the sglang server
-stop_sglang_server() {
-    echo "Stopping sglang server with PID: $SERVER_PID"
+# Function to stop the server
+stop_server() {
+    echo "Stopping server with PID: $SERVER_PID"
     if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
         kill $SERVER_PID
         wait $SERVER_PID 2>/dev/null || true
@@ -158,8 +162,8 @@ python -m olmocr.bench.convert olmocr_pipeline --repeats 5
 
 # Install marker-pdf and run benchmarks
 echo "Installing marker-pdf and running benchmarks..."
-pip install marker-pdf
-python -m olmocr.bench.convert marker --repeats 5
+pip install marker-pdf==1.6.1
+python -m olmocr.bench.convert marker
 
 # Install verovio and run benchmarks
 # echo "Installing verovio and running benchmarks..."
@@ -169,43 +173,48 @@ python -m olmocr.bench.convert marker --repeats 5
 # Run chatgpt benchmarks
 echo "Running chatgpt benchmarks..."
 python -m olmocr.bench.convert chatgpt
-python -m olmocr.bench.convert chatgpt:name=chatgpt45:model=gpt-4.5-preview-2025-02-27
+#python -m olmocr.bench.convert chatgpt:name=chatgpt45:model=gpt-4.5-preview-2025-02-27
 
 # Run gemini benchmarks
 echo "Running gemini benchmarks..."
-python -m olmocr.bench.convert gemini:name=gemini_flash2:model=gemini-2.0-flash
+python -m olmocr.bench.convert gemini:name=gemini_flash2:model=gemini-2.0-flash --parallel 4
 
 echo "Running mistral..."
 pip install mistralai
 python -m olmocr.bench.convert mistral
 
-# Run raw server benchmarks with sglang server
+# Run raw server benchmarks with generic server function
 # For each model, start server, run benchmark, then stop server
 
 # Check port availability at script start
 check_port || exit 1
 
-# olmocr_base_temp0_1
-start_sglang_server "allenai/olmOCR-7B-0225-preview" --chat-template qwen2-vl --mem-fraction-static 0.7
+# olmocr_base_temp0_1 using sglang server
+start_server sglang "allenai/olmOCR-7B-0225-preview" --chat-template qwen2-vl --mem-fraction-static 0.7
 python -m olmocr.bench.convert server:name=olmocr_base_temp0_1:model=allenai/olmOCR-7B-0225-preview:temperature=0.1:prompt_template=fine_tune:response_template=json --repeats 5 --parallel 20
 python -m olmocr.bench.convert server:name=olmocr_base_temp0_8:model=allenai/olmOCR-7B-0225-preview:temperature=0.8:prompt_template=fine_tune:response_template=json --repeats 5 --parallel 20
-stop_sglang_server
+stop_server
 
-# qwen2_vl_7b
-start_sglang_server "Qwen/Qwen2-VL-7B-Instruct" --chat-template qwen2-vl --mem-fraction-static 0.7
-python -m olmocr.bench.convert server:name=qwen2_vl_7b:model=Qwen/Qwen2-VL-7B-Instruct:temperature=0.1:prompt_template=full:response_template=plain --repeats 5 --parallel 20
-stop_sglang_server
+start_server vllm "allenai/olmOCR-7B-0225-preview"
+python -m olmocr.bench.convert server:name=olmocr_base_vllm_temp0_1:model=allenai/olmOCR-7B-0225-preview:temperature=0.1:prompt_template=fine_tune:response_template=json --repeats 5 --parallel 20
+python -m olmocr.bench.convert server:name=olmocr_base_vllm_temp0_8:model=allenai/olmOCR-7B-0225-preview:temperature=0.8:prompt_template=fine_tune:response_template=json --repeats 5 --parallel 20
+stop_server
 
-# TODO: Not working right now either in sglang
+# Feel free to enable if you want
+# qwen2_vl_7b using sglang server
+# start_server sglang "Qwen/Qwen2-VL-7B-Instruct" --chat-template qwen2-vl --mem-fraction-static 0.7
+# python -m olmocr.bench.convert server:name=qwen2_vl_7b:model=Qwen/Qwen2-VL-7B-Instruct:temperature=0.1:prompt_template=full:response_template=plain --repeats 5 --parallel 20
+# stop_server
+
+# TODO: qwen2.5 Not working right now in sglang
 # qwen25_vl_7b
 # create_conda_env "qwen25" "3.11"
 # source activate qwen25
 # pip install olmocr
 # pip install "sglang[all]>=0.4.3.post2" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer-python transformers==4.48.3
-# start_sglang_server "Qwen/Qwen2.5-VL-7B-Instruct" --chat-template qwen2-vl --mem-fraction-static 0.7
+# start_server sglang "Qwen/Qwen2.5-VL-7B-Instruct" --chat-template qwen2-vl --mem-fraction-static 0.7
 # python -m olmocr.bench.convert server:name=qwen25_vl_7b:model=Qwen/Qwen2.5-VL-7B-Instruct:temperature=0.1:prompt_template=full:response_template=plain --repeats 5 --parallel 20
-# stop_sglang_server
-
+# stop_server
 
 # TODO: Fix this, I was not able to get it to all install successfully
 # Create and activate mineru environment
@@ -223,7 +232,7 @@ stop_sglang_server
 
 # Final cleanup
 if [ -n "$SERVER_PID" ] && kill -0 $SERVER_PID 2>/dev/null; then
-    stop_sglang_server
+    stop_server
 fi
 
 echo "All benchmarks completed successfully."

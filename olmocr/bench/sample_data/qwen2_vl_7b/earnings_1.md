@@ -1,1 +1,0 @@
-Stock-based compensation capitalized in inventories was not significant during fiscal years 2025, 2024, and 2023.
